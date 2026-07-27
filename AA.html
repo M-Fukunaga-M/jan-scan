@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JAN見積システム (PCテスト機能付き)</title>
+<!-- バーコードリーダー用ライブラリ -->
+<script src="https://unpkg.com"></script>
+<style>
+body { font-family: sans-serif; margin: 10px; background: #f4f6f8; color: #333; line-height: 1.4; }
+.container { max-width: 600px; margin: 0 auto; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+h1 { text-align: center; color: #111; font-size: 20px; margin: 0 0 15px 0; border-bottom: 2px solid #2b6cb0; padding-bottom: 8px; }
+h2 { color: #2d3748; font-size: 15px; margin: 0 0 10px 0; border-left: 4px solid #2b6cb0; padding-left: 6px; }
+.section { background: #ffffff; border: 1px solid #e2e8f0; padding: 12px; border-radius: 6px; margin-bottom: 15px; }
+label { display: block; font-weight: bold; margin-bottom: 4px; font-size: 13px; color: #4a5568; }
+input[type="text"], input[type="date"], select { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 15px; background-color: #fff; }
+/* PCテスト用エリアのスタイル */
+.pc-test-box { background: #e2e8f0; border: 1px solid #cbd5e0; padding: 12px; border-radius: 6px; margin-bottom: 15px; }
+.pc-test-box label { color: #2d3748; }
+/* マスタ読み込み状態バー */
+.system-status { font-size: 12px; color: #fff; background: #4a5568; padding: 6px 10px; border-radius: 4px; margin-bottom: 15px; display: flex; justify-content: space-between; }
+.status-badge { font-weight: bold; padding: 2px 6px; border-radius: 3px; font-size: 11px; }
+.badge-loading { background: #dd6b20; }
+.badge-ready { background: #38a169; }
+/* 送料無料メーター用スタイル */
+.shipping-alert-box { background: #fffaf0; border: 1px solid #feebc8; padding: 12px; border-radius: 6px; text-align: center; margin-bottom: 15px; }
+.total-display { font-size: 22px; font-weight: bold; color: #2d3748; }
+.meter-text { font-size: 16px; font-weight: bold; margin-top: 4px; }
+.status-free { color: #38a169; }
+.status-need { color: #dd6b20; }
+#reader { width: 100%; max-width: 360px; margin: 0 auto 10px auto; border: 1px solid #cbd5e0; border-radius: 4px; background: #000; }
+table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+th, td { border: 1px solid #e2e8f0; padding: 6px; text-align: left; }
+th { background: #f7fafc; color: #4a5568; }
+.btn { display: block; width: 100%; padding: 12px; background: #2b6cb0; color: white; text-align: center; border: none; border-radius: 4px; font-size: 15px; cursor: pointer; margin-top: 8px; font-weight: bold; }
+.btn:active { background: #1a365d; }
+.btn-success { display: block; width: 100%; padding: 14px; background: #38a169; color: white; text-align: center; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; margin-top: 15px; font-weight: bold; }
+.btn-success:active { background: #22543d; }
+.qty-input { width: 45px; padding: 4px; font-size: 14px; border: 1px solid #cbd5e0; border-radius: 4px; text-align: center; }
+.info-text { font-size: 12px; color: #718096; margin-top: 2px; }
+.checkbox-label { display: flex; align-items: center; font-weight: normal; font-size: 14px; margin-top: 5px; }
+.checkbox-label input { margin-right: 6px; width: 16px; height: 16px; }
+.form-group { margin-bottom: 10px; }
+.prod-meta { font-size: 11px; color: #718096; margin-top: 2px; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>JAN見積システム (PCテスト機能付き)</h1>
+
+<!-- システム状態表示 -->
+<div class="system-status">
+<div>商品マスタ: <span id="prodStatus" class="status-badge badge-loading">読込中...</span></div>
+<div>顧客マスタ: <span id="custStatus" class="status-badge badge-loading">読込中...</span></div>
+</div>
+
+<!-- 💻 PCカメラなしテスト用入力ボックス -->
+<div class="pc-test-box">
+<h2>💻 カメラがないPC用：模擬テスト入力</h2>
+<div class="form-group" style="display: flex; gap: 8px;">
+<input type="text" id="pcJanInput" placeholder="JANコードを直接手入力（例：4901234567890）">
+<button class="btn" style="margin-top: 0; width: 120px;" onclick="simulateScan()">模擬スキャン</button>
+</div>
+<div class="info-text">※マスタ読み込み後に、products.csvに登録したJANコードを入れてボタンを押すと、カメラで読み取った時と同じ動きをテストできます。</div>
+</div>
+
+<!-- 1. 顧客受付エリア -->
+<div class="section">
+<h2>1. 顧客受付</h2>
+<div class="form-group">
+<label for="customerInput">顧客名検索</label>
+<input type="text" id="customerInput" list="customerList" placeholder="文字入力で検索...">
+<datalist id="customerList"></datalist>
+<label class="checkbox-label">
+<input type="checkbox" id="isNewCustomer" onchange="toggleNewCustomer(this.checked)">
+新規顧客 (後で名前・住所を入力する)
+</label>
+<div id="customerStatus" class="info-text"></div>
+</div>
+</div>
+
+<!-- 2. 送料無料メーター＆リアルタイム下代総額 -->
+<div class="shipping-alert-box">
+<div class="total-display">卸総額(下代): <span id="totalAmount">0</span> 円 (税別)</div>
+<div id="shippingMeter" class="meter-text status-need">あと 32,000 円 (税別) で送料無料</div>
+</div>
+
+<!-- 3. スキャンエリア -->
+<div class="section">
+<h2>2. 商品スキャン (ロット数自動反映)</h2>
+<div id="reader"></div>
+<button class="btn" onclick="startScanner()">スキャン開始</button>
+</div>
+
+<!-- 4. 明細一覧 -->
+<div class="section">
+<h2>3. 見積明細一覧</h2>
+<table>
+<thead>
+<tr>
+<th>商品情報</th>
+<th>価格(上代/下代)</th>
+<th>数量</th>
+<th>下代小計</th>
+</tr>
+</thead>
+<tbody id="cartTableBody"></tbody>
+</table>
+</div>
+
+<!-- 5. 取引条件・配送先入力 -->
+<div class="section">
+<h2>4. 取引条件・お届け先</h2>
+<div class="form-group">
+<label for="paymentMethod">支払い方法</label>
+<select id="paymentMethod">
+<option value="現金">現金</option>
+<option value="代引き">代引き</option>
+<option value="掛け売り">掛け売り</option>
+</select>
+</div>
+<div class="form-group">
+<label for="deliveryDate">希望納期</label>
+<input type="date" id="deliveryDate">
+</div>
+<div class="form-group">
+<label for="shippingAddress">お届け先住所・直送先記入欄</label>
+<input type="text" id="shippingAddress" placeholder="新規の方の住所や、マスタと異なる直送先はこちらへ">
+<div class="info-text">※既存顧客で登録住所へ配送する場合は空欄でOKです。</div>
+</div>
+<button class="btn btn-success" onclick="generatePDF()">見積データ確定・控え発行</button>
+</div>
+</div>
+
+<script>
+let productMaster = {};
+let customerMaster = [];
+let cart = [];
+let html5QrcodeScanner = null;
+const FREE_SHIPPING_LINE = 32000; // 送料無料ライン（下代・税別）
+
+window.addEventListener('DOMContentLoaded', () => {
+loadProductMasterFromServer();
+loadCustomerMasterFromServer();
+});
+
+// 商品マスタ(products.csv)の自動取得
+function loadProductMasterFromServer() {
+fetch('products.csv')
+.then(response => {
+if (!response.ok) throw new Error('商品マスタが見つかりません');
+return response.arrayBuffer();
+})
+.then(buffer => {
+const decoder = new TextDecoder('shift-jis');
+const text = decoder.decode(buffer);
+const lines = text.split(/\r\n|\n/);
+productMaster = {};
+let count = 0;
+for(let i = 1; i < lines.length; i++) {
+if(!lines[i]) continue;
+const cols = lines[i].split(',');
+if(cols.length >= 6) {
+const jan = cols[0].trim();
+productMaster[jan] = {
+code: cols[1].trim(),
+name: cols[2].trim(),
+retailPrice: parseInt(cols[3].trim(), 10) || 0,
+wholesalePrice: parseInt(cols[4].trim(), 10) || 0,
+lot: parseInt(cols[5].trim(), 10) || 1
+};
+count++;
+}
+}
+const badge = document.getElementById('prodStatus');
+badge.innerText = `完了 (${count}件)`;
+badge.className = "status-badge badge-ready";
+})
+.catch(err => {
+document.getElementById('prodStatus').innerText = "読込エラー";
+console.error(err);
+});
+}
+
+// 顧客マスタ(customers.csv)の自動取得
+function loadCustomerMasterFromServer() {
+fetch('customers.csv')
+.then(response => {
+if (!response.ok) throw new Error('顧客マスタが見つかりません');
+return response.arrayBuffer();
+})
+.then(buffer => {
+const decoder = new TextDecoder('shift-jis');
+const text = decoder.decode(buffer);
+const lines = text.split(/\r\n|\n/);
+customerMaster = [];
+const datalist = document.getElementById('customerList');
+datalist.innerHTML = '';
+let count = 0;
+for(let i = 1; i < lines.length; i++) {
+if(!lines[i]) continue;
+const cols = lines[i].split(',');
+if(cols.length >= 2) {
+customerMaster.push({ id: cols[0].trim(), name: cols[1].trim() });
+const option = document.createElement('option');
+option.value = cols[1].trim();
+datalist.appendChild(option);
+count++;
+}
+}
+const badge = document.getElementById('custStatus');
+badge.innerText = `完了 (${count}件)`;
+badge.className = "status-badge badge-ready";
+})
+.catch(err => {
+document.getElementById('custStatus').innerText = "読込エラー";
+console.error(err);
+});
+}
+
+// PCテスト用：手入力による模擬スキャン
+function simulateScan() {
+const janInput = document.getElementById('pcJanInput');
+const janCode = janInput.value.trim();
+if (!janCode) {
+alert("JANコードを入力してください。");
+return;
+}
+handleScanSuccess(janCode);
+janInput.value = ""; // 入力欄をクリア
+}
+
+function toggleNewCustomer(isChecked) {
+const input = document.getElementById('customerInput');
+const statusDiv = document.getElementById('customerStatus');
+if (isChecked) {
+input.value = "新規顧客（未登録）";
+input.disabled = true;
+statusDiv.innerText = "＋ このまま商品スキャンへ。最後に住所等を入力します。";
+statusDiv.style.color = "#dd6b20";
+} else {
+input.value = "";
+input.disabled = false;
+statusDiv.innerText = "";
+}
+}
+
+document.getElementById('customerInput').addEventListener('input', function(e) {
+const value = e.target.value;
+const statusDiv = document.getElementById('customerStatus');
+if(!value) { statusDiv.innerText = ''; return; }
+const match = customerMaster.find(c => c.name === value);
+if (match) {
+statusDiv.innerText = `✓ マスタ登録済顧客です (ID: ${match.id})`;
+statusDiv.style.color = "#38a169";
+} else {
+statusDiv.innerText = "⚠ マスタ未登録の名前です（最後に新規情報として記録されます）";
+statusDiv.style.color = "#dd6b20";
+}
+});
+
+function startScanner() {
+if (html5QrcodeScanner) { html5QrcodeScanner.clear(); }
+html5QrcodeScanner = new Html5Qrcode("reader");
+html5QrcodeScanner.start(
+{ facingMode: "environment" },
+{ fps: 12, qrbox: { width: 260, height: 110 } },
+(decodedText) => { handleScanSuccess(decodedText); },
+(err) => {}
+).catch(err => alert("カメラ起動失敗: " + err + "\n※PCテストの場合は上の『模擬テスト入力』枠をご利用ください。"));
+}
+
+function handleScanSuccess(janCode) {
+if (html5QrcodeScanner) { try { html5QrcodeScanner.stop(); } catch(e){} }
+const product = productMaster[janCode];
+if (!product) {
+alert("マスタ未登録のJAN: " + janCode);
+if (html5QrcodeScanner) { setTimeout(startScanner, 1200); }
+return;
+}
+コードは注意してご使用ください。const existingItem = cart.find(item => item.jan === janCode);if (existingItem) {existingItem.qty += product.lot; // 重複時はロット数ぶん追加} else {cart.push({jan: janCode,code: product.code,name: product.name,retailPrice: product.retailPrice,wholesalePrice: product.wholesalePrice,qty: product.lot // 初回時はマスタのロット数を初期値にする});}updateCartUI();if (html5QrcodeScanner) { setTimeout(startScanner, 800); }}function updateCartUI() {const tbody = document.getElementById('cartTableBody');tbody.innerHTML = '';let total = 0;cart.forEach((item, index) => {const subtotal = item.wholesalePrice * item.qty;total += subtotal;const tr = document.createElement('tr');tr.innerHTML = <td> <strong>${item.name}</strong><br> <span class="prod-meta">コード: ${item.code} / JAN: ${item.jan}</span> </td> <td> 定価: ${item.retailPrice.toLocaleString()}円<br> <strong>卸価: ${item.wholesalePrice.toLocaleString()}円</strong> </td> <td><input type="number" class="qty-input" value="${item.qty}" min="1" onchange="updateQty(${index}, this.value)"></td> <td><strong>${subtotal.toLocaleString()}円</strong></td>;tbody.appendChild(tr);});document.getElementById('totalAmount').innerText = total.toLocaleString();const meterDiv = document.getElementById('shippingMeter');if (total >= FREE_SHIPPING_LINE) {meterDiv.innerText = "★送料無料対象です！";meterDiv.className = "meter-text status-free";} else {const diff = FREE_SHIPPING_LINE - total;meterDiv.innerText = あと ${diff.toLocaleString()} 円 (税別) で送料無料;meterDiv.className = "meter-text status-need";}}function updateQty(index, newQty) {cart[index].qty = parseInt(newQty, 10) || 1;updateCartUI();}function generatePDF() {const customerName = document.getElementById('customerInput').value;const payment = document.getElementById('paymentMethod').value;const delivDate = document.getElementById('deliveryDate').value;const address = document.getElementById('shippingAddress').value;const total = document.getElementById('totalAmount').innerText;if (!customerName) { alert("顧客名を選択、または新規にチェックを入れてください。"); return; }if (cart.length === 0) { alert("商品明細がありません。バーコードを模擬入力するか、スキャンしてください。"); return; }let detailsText = "";cart.forEach(item => {detailsText += ・[${item.code}] ${item.name} × ${item.qty} = ${(item.wholesalePrice * item.qty).toLocaleString()}円\n;});const summary = 【見積・注文控えデータ（下代・税別表記）】\n\n +取引先名: ${customerName}\n +支払い方法: ${payment}\n +希望納期: ${delivDate || '未指定'}\n +お届け先・直送先: ${address || 'マスタ登録住所'}\n +--------------------------------------\n +【明細（卸価格基準）】\n${detailsText} +--------------------------------------\n +合計金額(下代・税別): ${total} 円\n +送料条件: ${parseInt(total.replace(/,/g, '')) >= FREE_SHIPPING_LINE ? '送料無料' : '送料別途'}\n\n +上記の内容で確定しました。PDF控えの発行ロジックへ移行します。;alert(summary);}
